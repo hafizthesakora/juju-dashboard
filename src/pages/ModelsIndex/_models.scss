@@ -1,3 +1,7 @@
+// Search min-width (745px) + 136px gap + Group by (~175px) + expanded
+// side navigation (240px) + content padding (48px), plus a scrollbar.
+$models-group-by-gap-breakpoint: 1360px;
+
 .models {
   &__header {
     display: flex;
@@ -7,29 +11,22 @@
   &__controls {
     display: grid;
     flex-wrap: wrap;
-    gap: 0;
+    gap: $spv--small;
     grid-template-columns: 1fr;
     white-space: nowrap;
-
-    .p-segmented-control {
-      display: inline-block;
-    }
 
     @media (min-width: $breakpoint-large) {
       display: flex;
       gap: $sp-unit;
-      justify-content: space-between;
 
       .p-search-and-filter {
+        flex: 1;
         min-width: 745px;
       }
     }
 
-    @include mobile-and-medium {
-      .p-segmented-control {
-        display: flex;
-        flex-direction: column;
-      }
+    @media (min-width: $models-group-by-gap-breakpoint) {
+      gap: $sp-unit * 17; // 136px gap from the design
     }
   }
 
@@ -41,5 +38,15 @@
   .p-tooltip--top-center .p-tooltip__message {
     left: calc(50% - 0.875rem);
     margin-bottom: -0.5rem;
+  }
+
+  &__group-by {
+    align-items: center;
+    display: flex;
+    gap: $sph--small;
+  }
+
+  &__group-by-menu .is-selected {
+    background-color: $colors--theme--background-active;
   }
 }

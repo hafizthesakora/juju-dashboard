@@ -1,5 +1,6 @@
 import {
   Button,
+  ContextualMenu,
   Icon,
   Notification as ReactNotification,
   SearchAndFilter,
@@ -10,13 +11,12 @@ import type { SearchAndFilterChip } from "@canonical/react-components/dist/compo
 import classNames from "classnames";
 import type { JSX, ReactNode } from "react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 
 import ChipGroup from "components/ChipGroup";
 import DestroyModelDialog from "components/DestroyModelDialog";
 import LoadingSpinner from "components/LoadingSpinner";
 import ModelTable from "components/ModelTable";
-import SegmentedControl from "components/SegmentedControl";
 import { VALID_MODEL_GROUPINGS } from "consts";
 import { useCanAddModel } from "hooks/useCanAddModel";
 import useModelAttributes from "hooks/useModelAttributes";
@@ -182,6 +182,8 @@ export default function Models(): JSX.Element {
     }
     return "status";
   }, [queryParams.groupedby]);
+  const groupByLabelId = useId();
+  const groupByToggleId = useId();
 
   // Generate chips from available model data
   const generateChips = (
@@ -284,18 +286,34 @@ export default function Models(): JSX.Element {
               }
             }}
           />
-          <span>
-            <span className="p-text--default">Group by: </span>
-            <SegmentedControl
-              activeButton={queryParams.groupedby}
-              buttons={VALID_MODEL_GROUPINGS.map((group) => ({
-                children: <span className="u-capitalise">{group}</span>,
-                key: group,
-                to: urls.models.group({
-                  groupedby: group as ModelsGroupedBy,
-                }),
-              }))}
-              buttonComponent={Link}
+          <span className="models__group-by">
+            <span id={groupByLabelId}>{Label.GROUP_BY}</span>
+            <ContextualMenu
+              constrainPanelWidth
+              dropdownClassName="models__group-by-menu"
+              hasToggleIcon
+              position="left"
+              toggleClassName="u-no-margin--bottom u-capitalise"
+              toggleLabel={groupBy}
+              toggleProps={{
+                id: groupByToggleId,
+                "aria-labelledby": `${groupByLabelId} ${groupByToggleId}`,
+              }}
+              links={VALID_MODEL_GROUPINGS.map((group) => {
+                const selected = group === groupBy;
+                return {
+                  children: group,
+                  key: group,
+                  onClick: (): void => {
+                    setQueryParams({ groupedby: group });
+                  },
+                  role: "menuitemradio",
+                  "aria-checked": selected,
+                  className: classNames("u-capitalise", {
+                    "is-selected": selected,
+                  }),
+                };
+              })}
             />
           </span>
         </span>
