@@ -204,9 +204,98 @@ export const getCloudInfoState = createSelector(
   (sliceState) => sliceState.cloudInfo,
 );
 
+export const getCloudTags = createSelector([getCloudInfoState], (cloudInfo) =>
+  Object.keys(cloudInfo.clouds ?? {}),
+);
+
 export const getUserCredentialsState = createSelector(
   [slice],
   (sliceState) => sliceState.userCredentials,
+);
+
+/**
+  Whether the credentials have been fetched.
+*/
+export const getCredentialsLoaded = createSelector(
+  [getCloudInfoState, getUserCredentialsState],
+  (cloudInfo, userCredentials) =>
+    !!cloudInfo.clouds &&
+    (Object.keys(cloudInfo.clouds).length === 0 || userCredentials.loaded),
+);
+
+export const getCredentialContentsState = createSelector(
+  [slice],
+  (sliceState) => sliceState.credentialContents,
+);
+
+export const getCredentialTags = createSelector(
+  [getUserCredentialsState],
+  (userCredentials) => Object.values(userCredentials.credentials).flat(),
+);
+
+/**
+  The error that prevented the credentials from being fetched.
+  The sources depend on each other, so the first error takes precedence.
+*/
+export const getCredentialsError = createSelector(
+  [
+    getCloudInfoState,
+    getUserCredentialsState,
+    getCredentialContentsState,
+    getCredentialTags,
+  ],
+  (cloudInfo, userCredentials, credentialContents, credentialTags) => {
+    if (cloudInfo.errors) {
+      return cloudInfo.errors.message;
+    }
+    if (userCredentials.errors) {
+      return userCredentials.errors.message;
+    }
+    if (credentialTags.length && credentialContents.errors) {
+      return credentialContents.errors.message;
+    }
+    return undefined;
+  },
+);
+
+export const getCredentialsWithContents = createSelector(
+  [getCredentialTags, getCredentialContentsState],
+  (credentialTags, credentialContents) =>
+    credentialTags.map((credential) => {
+      const { cloud, name } = extractCredentialName(credential);
+      return {
+        credential,
+        cloud,
+        name,
+        contents: credentialContents.contents[credential],
+      };
+    }),
+);
+
+/**
+  Get the credentials (with their contents) that match the provided filters.
+  Values within a filter are ORed and the different filters are ANDed. The
+  `custom` filter matches any of the values against the credential's name and
+  cloud.
+*/
+export const getFilteredCredentials = createSelector(
+  [
+    getCredentialsWithContents,
+    (_state: RootState, filters: Filters): Filters => filters,
+  ],
+  (credentials, { cloud = [], credential = [], custom = [] }) =>
+    credentials.filter((row) => {
+      if (cloud.length && !cloud.includes(row.cloud)) {
+        return false;
+      }
+      if (credential.length && !credential.includes(row.name)) {
+        return false;
+      }
+      const attributes = `${row.name} ${row.cloud}`;
+      return (
+        !custom.length || custom.some((value) => attributes.includes(value))
+      );
+    }),
 );
 
 export const getModelSecretsState = createSelector(
@@ -496,7 +585,7 @@ export const getActiveUser = createSelector(
 
 export const getModelCredential = createSelector(
   [getModelDataByUUID],
-  (model) => extractCredentialName(model?.info?.["cloud-credential-tag"]),
+  (model) => extractCredentialName(model?.info?.["cloud-credential-tag"]).name,
 );
 
 export const getModelAccess = createSelector(
@@ -729,7 +818,7 @@ export const getFilteredModelData = createSelector(
         "model" in data ? extractCloudName(data.model["cloud-tag"]) : null;
       const credential =
         "info" in data
-          ? extractCredentialName(data.info?.["cloud-credential-tag"])
+          ? extractCredentialName(data.info?.["cloud-credential-tag"]).name
           : null;
       const region = "model" in data ? data.model.region : null;
       const owner = data.info
@@ -1453,6 +1542,16 @@ export const getModelMigrationTargets = createSelector(
     },
 );
 
+export const getRemoveCredential = createSelector(
+  [slice, (_state, credentialTag: string): string => credentialTag],
+  (state, credentialTag) =>
+    state.removeCredential[credentialTag] ?? {
+      running: false,
+      status: null,
+      outcome: null,
+    },
+);
+
 export const getHighestSupportedVersion = createSelector(
   [getSupportedJujuVersions],
   (versions) =>
@@ -1638,6 +1737,14 @@ Fetches the add model state.
 export const getAddModelState = createSelector(
   [slice],
   (sliceState) => sliceState.addModelState,
+);
+
+/**
+Fetches the add credential state.
+*/
+export const getAddCredentialState = createSelector(
+  [slice],
+  (sliceState) => sliceState.addCredentialState,
 );
 
 /**

@@ -8,6 +8,7 @@ import type {
   CommandHistory,
   Controller,
   ControllerLocation,
+  CredentialContentsState,
   CrossModelQueryState,
   HistoryItem,
   JujuState,
@@ -135,9 +136,17 @@ export const userCredentialsStateFactory = Factory.define<UserCredentialsState>(
   () => ({
     credentials: {},
     errors: null,
+    loaded: false,
     loading: false,
   }),
 );
+
+export const credentialContentsStateFactory =
+  Factory.define<CredentialContentsState>(() => ({
+    contents: {},
+    errors: null,
+    loading: false,
+  }));
 
 export const cloudInfoStateFactory = Factory.define<CloudState>(() => ({
   clouds: null,
@@ -216,6 +225,7 @@ export const jujuStateFactory = Factory.define<JujuState>(() => ({
   secrets: {},
   cloudInfo: cloudInfoStateFactory.build(),
   userCredentials: userCredentialsStateFactory.build(),
+  credentialContents: credentialContentsStateFactory.build(),
   modelConfigDefaults: modelConfigDefaultsStateFactory.build(),
   selectedApplications: {},
   modelsSelectedForDestruction: [],
@@ -223,6 +233,8 @@ export const jujuStateFactory = Factory.define<JujuState>(() => ({
   modelMigrationTargets: modelMigrationTargetsStateFactory.build(),
   addModelState: addModelStateFactory.build(),
   blockState: {},
+  removeCredential: {},
+  addCredentialState: {},
 }));
 
 export const modelDestructionDataFactory = Factory.define<ModelDestructionData>(

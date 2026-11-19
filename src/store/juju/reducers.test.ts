@@ -28,6 +28,7 @@ import {
   commandHistoryState,
   commandHistoryItem,
   userCredentialsStateFactory,
+  credentialContentsStateFactory,
   modelUpgradeFactory,
   modelSelectionParamsFactory,
 } from "testing/factories/juju/juju";
@@ -312,6 +313,33 @@ describe("reducers", () => {
     expect(reducer(state, actions.clearModelData())).toStrictEqual(
       jujuStateFactory.build({ modelsLoaded: false }),
     );
+  });
+
+  it("clearModelData resets the user credentials", () => {
+    const state = jujuStateFactory.build({
+      userCredentials: userCredentialsStateFactory.build({
+        credentials: { "cloud-aws": ["credential-1"] },
+        loaded: true,
+      }),
+    });
+    expect(
+      reducer(state, actions.clearModelData()).userCredentials,
+    ).toStrictEqual(userCredentialsStateFactory.build());
+  });
+
+  it("clearModelData resets the remove credential state", () => {
+    const state = jujuStateFactory.build({
+      removeCredential: {
+        "cloudcred-aws_admin_default": {
+          running: false,
+          status: "initiated",
+          outcome: { result: undefined },
+        },
+      },
+    });
+    expect(
+      reducer(state, actions.clearModelData()).removeCredential,
+    ).toStrictEqual({});
   });
 
   it("destroyModels", () => {
@@ -2111,102 +2139,216 @@ describe("reducers", () => {
   });
 
   describe("updateUserCredentials", () => {
-    describe("set fields", () => {
-      let state: JujuState;
+    let state: JujuState;
 
-      beforeEach(() => {
-        state = jujuStateFactory.build({
-          userCredentials: {
-            credentials: {},
-            errors: null,
-            loading: false,
-          },
-        });
-      });
-
-      it("updates data", () => {
-        const result = reducer(
-          state,
-          actions.updateUserCredentials({
-            cloudTag: "cloud-aws",
-            update: {
-              data: { "cloud-aws": ["credential-1", "credential-2"] },
-            },
-          }),
-        );
-        expect(result.userCredentials).toStrictEqual({
-          credentials: { "cloud-aws": ["credential-1", "credential-2"] },
-          errors: null,
-          loading: false,
-        });
-      });
-
-      it("updates loading", () => {
-        const result = reducer(
-          state,
-          actions.updateUserCredentials({
-            cloudTag: "cloud-aws",
-            update: {
-              loading: true,
-            },
-          }),
-        );
-        expect(result.userCredentials).toStrictEqual({
-          credentials: {},
-          errors: null,
-          loading: true,
-        });
-      });
-
-      it("updates error", () => {
-        const result = reducer(
-          state,
-          actions.updateUserCredentials({
-            cloudTag: "cloud-aws",
-            update: {
-              error: {
-                message: "Something went wrong",
-                source: "Something went wrong",
-              },
-            },
-          }),
-        );
-        expect(result.userCredentials).toStrictEqual({
-          credentials: {},
-          errors: {
-            message: "Something went wrong",
-            source: "Something went wrong",
-          },
-          loading: false,
-        });
+    beforeEach(() => {
+      state = jujuStateFactory.build({
+        userCredentials: userCredentialsStateFactory.build(),
       });
     });
 
-    it("adds credentials for new cloud if not existing", () => {
-      const state = jujuStateFactory.build({
-        userCredentials: userCredentialsStateFactory.build({
-          credentials: { "cloud-aws": ["credential-1", "credential-2"] },
-          errors: null,
-          loading: false,
-        }),
-      });
+    it("updates data", () => {
       const result = reducer(
         state,
         actions.updateUserCredentials({
-          cloudTag: "cloud-gce",
+          update: {
+            data: { "cloud-aws": ["credential-1", "credential-2"] },
+          },
+        }),
+      );
+      expect(result.userCredentials).toStrictEqual({
+        credentials: { "cloud-aws": ["credential-1", "credential-2"] },
+        errors: null,
+        loaded: true,
+        loading: false,
+      });
+    });
+
+    it("updates loading", () => {
+      const result = reducer(
+        state,
+        actions.updateUserCredentials({ update: { loading: true } }),
+      );
+      expect(result.userCredentials).toStrictEqual({
+        credentials: {},
+        errors: null,
+        loaded: false,
+        loading: true,
+      });
+    });
+
+    it("updates error", () => {
+      const result = reducer(
+        state,
+        actions.updateUserCredentials({
+          update: {
+            error: {
+              message: "Something went wrong",
+              source: "Something went wrong",
+            },
+          },
+        }),
+      );
+      expect(result.userCredentials).toStrictEqual({
+        credentials: {},
+        errors: {
+          message: "Something went wrong",
+          source: "Something went wrong",
+        },
+        loaded: false,
+        loading: false,
+      });
+    });
+
+    it("is loaded once data is received, even if there are no credentials", () => {
+      const result = reducer(
+        state,
+        actions.updateUserCredentials({ update: { data: {} } }),
+      );
+      expect(result.userCredentials.loaded).toBe(true);
+      expect(result.userCredentials.credentials).toStrictEqual({});
+    });
+
+    it("stays loaded when other updates are received", () => {
+      state.userCredentials.loaded = true;
+      const loading = reducer(
+        state,
+        actions.updateUserCredentials({ update: { loading: true } }),
+      );
+      expect(loading.userCredentials.loaded).toBe(true);
+      const error = reducer(
+        state,
+        actions.updateUserCredentials({
+          update: { error: { message: "Uh oh!", source: "Uh oh!" } },
+        }),
+      );
+      expect(error.userCredentials.loaded).toBe(true);
+    });
+
+    it("adds credentials for new cloud if not existing", () => {
+      const result = reducer(
+        jujuStateFactory.build({
+          userCredentials: userCredentialsStateFactory.build({
+            credentials: { "cloud-aws": ["credential-1", "credential-2"] },
+          }),
+        }),
+        actions.updateUserCredentials({
           update: {
             data: { "cloud-gce": ["credential-a", "credential-b"] },
           },
         }),
       );
-      expect(result.userCredentials).toStrictEqual({
-        credentials: {
-          "cloud-aws": ["credential-1", "credential-2"],
-          "cloud-gce": ["credential-a", "credential-b"],
-        },
+      expect(result.userCredentials.credentials).toStrictEqual({
+        "cloud-aws": ["credential-1", "credential-2"],
+        "cloud-gce": ["credential-a", "credential-b"],
+      });
+    });
+  });
+
+  describe("updateCredentialContents", () => {
+    let state: JujuState;
+
+    beforeEach(() => {
+      state = jujuStateFactory.build({
+        credentialContents: credentialContentsStateFactory.build(),
+      });
+    });
+
+    it("updates data", () => {
+      const contents = { "cloudcred-aws_admin_default": { result: {} } };
+      const result = reducer(
+        state,
+        actions.updateCredentialContents({ update: { data: contents } }),
+      );
+      expect(result.credentialContents).toStrictEqual({
+        contents,
         errors: null,
         loading: false,
       });
+    });
+
+    it("replaces existing data", () => {
+      state.credentialContents.contents = {
+        "cloudcred-aws_admin_old": { result: {} },
+      };
+      const contents = { "cloudcred-aws_admin_new": { result: {} } };
+      const result = reducer(
+        state,
+        actions.updateCredentialContents({ update: { data: contents } }),
+      );
+      expect(result.credentialContents.contents).toStrictEqual(contents);
+    });
+
+    it("clears the error when data is received", () => {
+      state.credentialContents.errors = {
+        message: "Something went wrong",
+        source: "credential-contents",
+      };
+      const result = reducer(
+        state,
+        actions.updateCredentialContents({ update: { data: {} } }),
+      );
+      expect(result.credentialContents.errors).toBeNull();
+    });
+
+    it("does not update the data if it is null", () => {
+      const contents = { "cloudcred-aws_admin_default": { result: {} } };
+      state.credentialContents.contents = contents;
+      state.credentialContents.errors = {
+        message: "Something went wrong",
+        source: "credential-contents",
+      };
+      const result = reducer(
+        state,
+        actions.updateCredentialContents({ update: { data: null } }),
+      );
+      expect(result.credentialContents.contents).toStrictEqual(contents);
+      expect(result.credentialContents.errors).not.toBeNull();
+    });
+
+    it("updates loading", () => {
+      const result = reducer(
+        state,
+        actions.updateCredentialContents({ update: { loading: true } }),
+      );
+      expect(result.credentialContents).toStrictEqual({
+        contents: {},
+        errors: null,
+        loading: true,
+      });
+    });
+
+    it("updates the error without changing the data", () => {
+      const contents = { "cloudcred-aws_admin_default": { result: {} } };
+      state.credentialContents.contents = contents;
+      const result = reducer(
+        state,
+        actions.updateCredentialContents({
+          update: {
+            error: {
+              message: "Something went wrong",
+              source: "credential-contents",
+            },
+          },
+        }),
+      );
+      expect(result.credentialContents).toStrictEqual({
+        contents,
+        errors: {
+          message: "Something went wrong",
+          source: "credential-contents",
+        },
+        loading: false,
+      });
+    });
+
+    it("does not change loading if it is not provided", () => {
+      state.credentialContents.loading = true;
+      const result = reducer(
+        state,
+        actions.updateCredentialContents({ update: { data: {} } }),
+      );
+      expect(result.credentialContents.loading).toBe(true);
     });
   });
 
@@ -2283,6 +2425,326 @@ describe("reducers", () => {
           loading: false,
         });
       });
+    });
+  });
+
+  describe("removeCredential", () => {
+    const credentialTag = "cloudcred-aws_eggman@external_my-cred";
+    const wsControllerURL = "wss://example.com/api";
+
+    describe("set fields", () => {
+      let state: JujuState;
+
+      beforeEach(() => {
+        state = jujuStateFactory.build({
+          removeCredential: {
+            [credentialTag]: {
+              running: true,
+              status: null,
+              outcome: null,
+            },
+          },
+        });
+      });
+
+      it("updates running", () => {
+        const result = reducer(
+          state,
+          actions.setRemoveCredentialRunning({
+            credentialTag,
+            running: false,
+            wsControllerURL,
+          }),
+        );
+
+        expect(result.removeCredential).toStrictEqual({
+          [credentialTag]: {
+            running: false,
+            status: null,
+            outcome: null,
+          },
+        });
+      });
+
+      it("updates status", () => {
+        const result = reducer(
+          state,
+          actions.setRemoveCredentialStatus({
+            credentialTag,
+            status: "pending",
+            wsControllerURL,
+          }),
+        );
+
+        expect(result.removeCredential).toStrictEqual({
+          [credentialTag]: {
+            running: true,
+            status: "pending",
+            outcome: null,
+          },
+        });
+      });
+
+      it("updates outcome", () => {
+        const result = reducer(
+          state,
+          actions.setRemoveCredentialOutcome({
+            credentialTag,
+            outcome: { result: undefined },
+            wsControllerURL,
+          }),
+        );
+
+        expect(result.removeCredential).toStrictEqual({
+          [credentialTag]: {
+            running: true,
+            status: null,
+            outcome: { result: undefined },
+          },
+        });
+      });
+    });
+
+    it("adds new credential if not existing", () => {
+      const state = jujuStateFactory.build();
+
+      const result = reducer(
+        state,
+        actions.setRemoveCredentialRunning({
+          credentialTag,
+          running: true,
+          wsControllerURL,
+        }),
+      );
+
+      expect(result.removeCredential).toStrictEqual({
+        [credentialTag]: {
+          running: true,
+          status: null,
+          outcome: null,
+        },
+      });
+    });
+
+    it("clears a previous error outcome when a new run starts", () => {
+      const state = jujuStateFactory.build({
+        removeCredential: {
+          [credentialTag]: {
+            running: false,
+            status: "pending",
+            outcome: { error: { message: "Something", source: "Something" } },
+          },
+        },
+      });
+
+      const result = reducer(
+        state,
+        actions.setRemoveCredentialRunning({
+          credentialTag,
+          running: true,
+          wsControllerURL,
+        }),
+      );
+
+      expect(result.removeCredential).toStrictEqual({
+        [credentialTag]: {
+          running: true,
+          status: null,
+          outcome: null,
+        },
+      });
+    });
+
+    it("clears a previous result when a new run starts", () => {
+      const state = jujuStateFactory.build({
+        removeCredential: {
+          [credentialTag]: {
+            running: false,
+            status: "pending",
+            outcome: { result: undefined },
+          },
+        },
+      });
+
+      const result = reducer(
+        state,
+        actions.setRemoveCredentialRunning({
+          credentialTag,
+          running: true,
+          wsControllerURL,
+        }),
+      );
+
+      expect(result.removeCredential).toStrictEqual({
+        [credentialTag]: {
+          running: true,
+          status: null,
+          outcome: null,
+        },
+      });
+    });
+
+    it("keeps the outcome when the run ends", () => {
+      const state = jujuStateFactory.build({
+        removeCredential: {
+          [credentialTag]: {
+            running: true,
+            status: "pending",
+            outcome: { error: { message: "Something", source: "Something" } },
+          },
+        },
+      });
+
+      const result = reducer(
+        state,
+        actions.setRemoveCredentialRunning({
+          credentialTag,
+          running: false,
+          wsControllerURL,
+        }),
+      );
+
+      expect(result.removeCredential).toStrictEqual({
+        [credentialTag]: {
+          running: false,
+          status: "pending",
+          outcome: { error: { message: "Something", source: "Something" } },
+        },
+      });
+    });
+  });
+
+  describe("addCredentialState", () => {
+    const wsControllerURL = "wss://example.com/api";
+    const key = "aws_my-cred";
+    const cloud = "aws";
+    const name = "my-cred";
+    const outcome = { result: undefined };
+    const errorOutcome = {
+      error: { message: "already exists", source: "already exists" },
+    };
+
+    it("setAddCredentialRunning starts a new entry", () => {
+      const state = jujuStateFactory.build({ addCredentialState: {} });
+      expect(
+        reducer(
+          state,
+          actions.setAddCredentialRunning({
+            wsControllerURL,
+            cloud,
+            name,
+            running: true,
+          }),
+        ).addCredentialState,
+      ).toStrictEqual({ [key]: { cloud, name, running: true, outcome: null } });
+    });
+
+    it("setAddCredentialRunning clears the previous outcome when it starts running", () => {
+      const state = jujuStateFactory.build({
+        addCredentialState: {
+          [key]: { cloud, name, running: false, outcome },
+        },
+      });
+      expect(
+        reducer(
+          state,
+          actions.setAddCredentialRunning({
+            wsControllerURL,
+            cloud,
+            name,
+            running: true,
+          }),
+        ).addCredentialState,
+      ).toStrictEqual({ [key]: { cloud, name, running: true, outcome: null } });
+    });
+
+    it("setAddCredentialRunning keeps the entry and outcome when it stops running", () => {
+      const state = jujuStateFactory.build({
+        addCredentialState: {
+          [key]: { cloud, name, running: true, outcome },
+        },
+      });
+      expect(
+        reducer(
+          state,
+          actions.setAddCredentialRunning({
+            wsControllerURL,
+            cloud,
+            name,
+            running: false,
+          }),
+        ).addCredentialState,
+      ).toStrictEqual({ [key]: { cloud, name, running: false, outcome } });
+    });
+
+    it("setAddCredentialRunning is a no-op when stopping and entry doesn't exist", () => {
+      const state = jujuStateFactory.build({ addCredentialState: {} });
+      expect(
+        reducer(
+          state,
+          actions.setAddCredentialRunning({
+            wsControllerURL,
+            cloud,
+            name,
+            running: false,
+          }),
+        ).addCredentialState,
+      ).toStrictEqual({});
+    });
+
+    it.each([
+      ["success", outcome],
+      ["error", errorOutcome],
+    ])("setAddCredentialOutcome stores a %s outcome", (_label, expected) => {
+      const state = jujuStateFactory.build({
+        addCredentialState: {
+          [key]: { cloud, name, running: true, outcome: null },
+        },
+      });
+      expect(
+        reducer(
+          state,
+          actions.setAddCredentialOutcome({
+            wsControllerURL,
+            cloud,
+            name,
+            outcome: expected,
+          }),
+        ).addCredentialState,
+      ).toStrictEqual({
+        [key]: { cloud, name, running: true, outcome: expected },
+      });
+    });
+
+    it("setAddCredentialOutcome is a no-op when the entry doesn't exist", () => {
+      const state = jujuStateFactory.build({ addCredentialState: {} });
+      expect(
+        reducer(
+          state,
+          actions.setAddCredentialOutcome({
+            wsControllerURL,
+            cloud,
+            name,
+            outcome,
+          }),
+        ).addCredentialState,
+      ).toStrictEqual({});
+    });
+
+    it("clearAddCredential only removes the matching entry", () => {
+      const other = { cloud, name: "other", running: false, outcome };
+      const state = jujuStateFactory.build({
+        addCredentialState: {
+          [key]: { cloud, name, running: false, outcome },
+          [`${cloud}_other`]: other,
+        },
+      });
+      expect(
+        reducer(
+          state,
+          actions.clearAddCredential({ wsControllerURL, cloud, name }),
+        ).addCredentialState,
+      ).toStrictEqual({ [`${cloud}_other`]: other });
     });
   });
 });

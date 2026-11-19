@@ -7,10 +7,12 @@ import {
   type JSX,
   type OptionHTMLAttributes,
 } from "react";
+import { shallowEqual } from "react-redux";
 
 import { getWSControllerURL } from "store/general/selectors";
 import {
   getCloudInfoState,
+  getCloudTags,
   getUserCredentialsState,
 } from "store/juju/selectors";
 import type { CloudState } from "store/juju/types";
@@ -41,7 +43,7 @@ const toCredentialOptions = (
   credentials: string[],
 ): OptionHTMLAttributes<HTMLOptionElement>[] =>
   credentials.map((credential) => {
-    const credentialName = extractCredentialName(credential);
+    const { name: credentialName } = extractCredentialName(credential);
     return {
       label: credentialName,
       value: credential,
@@ -71,6 +73,9 @@ const MandatoryDetails = (): JSX.Element => {
   const { values, setFieldValue } = useFormikContext<AddModelFormState>();
   const wsControllerURL = useAppSelector(getWSControllerURL);
   const cloudInfo = useAppSelector(getCloudInfoState).clouds;
+  // Compare the tags by value so that the credentials are not fetched again each
+  // time the cloud info is updated.
+  const cloudTags = useAppSelector(getCloudTags, shallowEqual);
   const userCredentials = useAppSelector(getUserCredentialsState);
   const cloudOptions = useMemo(() => toCloudOptions(cloudInfo), [cloudInfo]);
   const defaultCloud =
@@ -96,31 +101,20 @@ const MandatoryDetails = (): JSX.Element => {
     }
   }, [values.credential, values.cloud, userCredentials, setFieldValue]);
 
-  // Start polling for credentials when a cloud is selected and credentials are not yet loaded.
+  // The credentials of every cloud are fetched together.
   useEffect(() => {
-    if (
-      wsControllerURL &&
-      selectedCloud &&
-      !userCredentials.credentials[selectedCloud]
-    ) {
-      dispatch(
-        userCredentialsMiddleware.actions.start({
-          wsControllerURL,
-          cloudTag: selectedCloud,
-        }),
-      );
+    if (!wsControllerURL || !cloudTags.length) {
+      return;
     }
+    dispatch(
+      userCredentialsMiddleware.actions.start({ wsControllerURL, cloudTags }),
+    );
     return (): void => {
-      if (wsControllerURL && selectedCloud) {
-        dispatch(
-          userCredentialsMiddleware.actions.stop({
-            wsControllerURL,
-            cloudTag: selectedCloud,
-          }),
-        );
-      }
+      dispatch(
+        userCredentialsMiddleware.actions.stop({ wsControllerURL, cloudTags }),
+      );
     };
-  }, [dispatch, wsControllerURL, selectedCloud, userCredentials.credentials]);
+  }, [dispatch, wsControllerURL, cloudTags]);
 
   // Start polling for live model config defaults when a cloud is selected.
   const providerType = selectedCloud
@@ -190,7 +184,7 @@ const MandatoryDetails = (): JSX.Element => {
         component={Select}
         label={Label.CREDENTIAL}
         name="credential"
-        disabled={userCredentials.loading || !values.cloud}
+        disabled={!userCredentials.loaded || !values.cloud}
         required
         options={credentialsOptions}
       />

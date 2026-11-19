@@ -35,9 +35,12 @@ import type {
   SourceData,
   ModelUpgrade,
   AddModel,
+  AddCredentialEntry,
   BlockEntry,
+  RemoveCredentialEntry,
   ModelDestructionParams,
   ModelSelectionParams,
+  CredentialContentsState,
 } from "./types";
 import { getModelQualifier } from "./utils/models";
 
@@ -151,6 +154,12 @@ const slice = createSlice({
     userCredentials: {
       credentials: {},
       errors: null,
+      loaded: false,
+      loading: false,
+    },
+    credentialContents: {
+      contents: {},
+      errors: null,
       loading: false,
     },
     modelConfigDefaults: {
@@ -170,6 +179,8 @@ const slice = createSlice({
       loaded: false,
     },
     blockState: {},
+    removeCredential: {},
+    addCredentialState: {},
   } as JujuState,
   reducers: {
     updateModelList: (
@@ -282,8 +293,17 @@ const slice = createSlice({
       state.userCredentials = {
         credentials: {},
         errors: null,
+        loaded: false,
         loading: false,
       };
+      state.credentialContents = {
+        contents: {},
+        errors: null,
+        loading: false,
+      };
+      state.blockState = {};
+      state.removeCredential = {};
+      state.addCredentialState = {};
     },
     setModelCanConfigure: (
       state,
@@ -827,7 +847,6 @@ const slice = createSlice({
       {
         payload,
       }: PayloadAction<{
-        cloudTag: string;
         update: Partial<SourceData<Record<string, string[]>>>;
       }>,
     ) => {
@@ -836,9 +855,28 @@ const slice = createSlice({
       value.loading = payload.update.loading ?? value.loading;
       if (payload.update.data !== undefined) {
         value.credentials = { ...value.credentials, ...payload.update.data };
+        value.loaded = true;
       }
       if (payload.update.error !== undefined) {
         value.errors = payload.update.error;
+      }
+    },
+    updateCredentialContents: (
+      state,
+      {
+        payload,
+      }: PayloadAction<{
+        update: Partial<SourceData<CredentialContentsState["contents"]>>;
+      }>,
+    ) => {
+      state.credentialContents.loading =
+        payload.update.loading ?? state.credentialContents.loading;
+      if (payload.update.data !== undefined && payload.update.data !== null) {
+        state.credentialContents.contents = payload.update.data;
+        state.credentialContents.errors = null;
+      }
+      if (payload.update.error !== undefined) {
+        state.credentialContents.errors = payload.update.error;
       }
     },
     updateCloudInfo: (
@@ -982,6 +1020,122 @@ const slice = createSlice({
       }
       state.blockState[action.payload.modelUUID].outcome =
         action.payload.outcome;
+    },
+    setRemoveCredentialRunning: (
+      state,
+      action: PayloadAction<
+        {
+          credentialTag: string;
+          running: boolean;
+        } & WsControllerURLParam
+      >,
+    ) => {
+      if (!state.removeCredential[action.payload.credentialTag]) {
+        state.removeCredential[action.payload.credentialTag] = {
+          running: false,
+          status: null,
+          outcome: null,
+        };
+      }
+      const entry = state.removeCredential[action.payload.credentialTag];
+      entry.running = action.payload.running;
+      if (action.payload.running) {
+        // A retry or a re-added credential must not show the previous outcome.
+        entry.status = null;
+        entry.outcome = null;
+      }
+    },
+    setRemoveCredentialStatus: (
+      state,
+      action: PayloadAction<
+        {
+          credentialTag: string;
+          status: RemoveCredentialEntry["status"];
+        } & WsControllerURLParam
+      >,
+    ) => {
+      if (!state.removeCredential[action.payload.credentialTag]) {
+        state.removeCredential[action.payload.credentialTag] = {
+          running: false,
+          status: null,
+          outcome: null,
+        };
+      }
+      state.removeCredential[action.payload.credentialTag].status =
+        action.payload.status;
+    },
+    setRemoveCredentialOutcome: (
+      state,
+      action: PayloadAction<
+        {
+          credentialTag: string;
+          outcome: RemoveCredentialEntry["outcome"];
+        } & WsControllerURLParam
+      >,
+    ) => {
+      if (!state.removeCredential[action.payload.credentialTag]) {
+        state.removeCredential[action.payload.credentialTag] = {
+          running: false,
+          status: null,
+          outcome: null,
+        };
+      }
+      state.removeCredential[action.payload.credentialTag].outcome =
+        action.payload.outcome;
+    },
+    setAddCredentialRunning: (
+      state,
+      action: PayloadAction<
+        {
+          cloud: string;
+          name: string;
+          running: boolean;
+        } & WsControllerURLParam
+      >,
+    ) => {
+      const { cloud, name, running } = action.payload;
+      const key = `${cloud}_${name}`;
+      if (running) {
+        if (!state.addCredentialState[key]) {
+          state.addCredentialState[key] = {
+            cloud,
+            name,
+            running: false,
+            outcome: null,
+          };
+        }
+        const entry = state.addCredentialState[key];
+        entry.running = true;
+        // A retry must not show the outcome of a previous run.
+        entry.outcome = null;
+      } else if (state.addCredentialState[key]) {
+        state.addCredentialState[key].running = false;
+      }
+    },
+    setAddCredentialOutcome: (
+      state,
+      action: PayloadAction<
+        {
+          cloud: string;
+          name: string;
+          outcome: AddCredentialEntry["outcome"];
+        } & WsControllerURLParam
+      >,
+    ) => {
+      const { cloud, name, outcome } = action.payload;
+      const key = `${cloud}_${name}`;
+      if (state.addCredentialState[key]) {
+        state.addCredentialState[key].outcome = outcome;
+      }
+    },
+    clearAddCredential: (
+      state,
+      action: PayloadAction<
+        { cloud: string; name: string } & WsControllerURLParam
+      >,
+    ) => {
+      const { cloud, name } = action.payload;
+      delete state.addCredentialState[`${cloud}_${name}`];
     },
   },
 });
